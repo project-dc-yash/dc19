@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wi-Fi Through-Wall Human Detection | Raspberry Pi Dashboard</title>
+
+  <!-- Fonts & Icons (optional; remove if offline) -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+
+  <style>
+    :root{
+      --bg: #0f1320;         /* dark base */
+      --panel: #151a2b;
+      --panel-2:#1b2136;
+      --text: #e9ecf1;
+      --subtext:#c7ccdb;
+      --muted:#8b93a7;
+      --brand:#7c5cff;
+      --ok:#3ddc97;
+      --warn:#ffb020;
+      --bad:#ff5c7a;
+      --shadow: 0 10px 30px rgba(0,0,0,.30);
+      --radius: 18px;
+      --ring: 0 0 0 3px rgba(124,92,255,.35);
+    }
+    /* Light mode palette */
+    #theme-toggle:checked ~ .app{
+      --bg:#f6f7fb;
+      --panel:#ffffff;
+      --panel-2:#f1f3f9;
+      --text:#0f1320;
+      --subtext:#3a4157;
+      --muted:#6b7280;
+      --brand:#5b6cff;
+      --ok:#10b981;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --shadow: 0 10px 30px rgba(17,24,39,.10);
+      --ring: 0 0 0 3px rgba(91,108,255,.25);
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,Segoe UI,Roboto,Arial,Helvetica,sans-serif;
+      color:var(--text);
+      background: radial-gradient(1200px 700px at -10% -20%, #1a1f36 0%, transparent 60%) , var(--bg);
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    }
+
+    /* Layout */
+    .app{display:grid; grid-template-rows:auto 1fr; min-height:100dvh;}
+    header.topbar{
+      position:sticky; top:0; z-index:50;
+      background:linear-gradient(0deg, rgba(255,255,255,0.02), rgba(255,255,255,0.02)), var(--panel);
+      backdrop-filter:saturate(140%) blur(6px);
+      border-bottom:1px solid rgba(255,255,255,.06);
+      box-shadow:var(--shadow);
+    }
+    .topbar-inner{
+      max-width:1200px; margin:0 auto; padding:14px 18px;
+      display:flex; align-items:center; gap:14px;
+    }
+    .brand{
+      display:flex; align-items:center; gap:10px; font-weight:700;
+      letter-spacing:.2px;
+    }
+    .brand .logo{
+      width:38px; height:38px; display:grid; place-items:center; border-radius:12px;
+      background:linear-gradient(135deg, var(--brand), #c084fc);
+      color:#fff; box-shadow:0 8px 20px rgba(124,92,255,.35);
+    }
+    .spacer{flex:1}
+    .pill{
+      display:inline-flex; align-items:center; gap:10px; padding:10px 12px;
+      background:var(--panel-2); border:1px solid rgba(255,255,255,.07);
+      border-radius:999px; font-size:12px; color:var(--subtext);
+    }
+    .pill i{opacity:.9}
+
+    /* Theme toggle (CSS only) */
+    #theme-toggle{position:absolute; left:-9999px}
+    .toggle{
+      cursor:pointer; display:inline-grid; grid-auto-flow:column; align-items:center; gap:10px;
+      padding:8px 12px; border-radius:999px; background:var(--panel-2);
+      border:1px solid rgba(255,255,255,.07); user-select:none;
+    }
+    .toggle .knob{
+      width:36px; height:22px; background:var(--brand); border-radius:999px; position:relative;
+      box-shadow:inset 0 0 0 2px rgba(255,255,255,.15);
+    }
+    .toggle .dot{
+      position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%;
+      background:#fff; transition:transform .25s ease;
+      box-shadow:0 2px 6px rgba(0,0,0,.25);
+    }
+    #theme-toggle:checked ~ .app header .toggle .dot{ transform:translateX(14px); }
+
+    /* Shell */
+    .shell{
+      max-width:1200px; margin:24px auto; padding:0 18px; display:grid; gap:18px;
+      grid-template-columns: 260px 1fr;
+    }
+    @media (max-width: 980px){
+      .shell{grid-template-columns:1fr}
+    }
+
+    /* Sidebar */
+    .sidebar{
+      background:var(--panel); border:1px solid rgba(255,255,255,.06); border-radius:var(--radius);
+      padding:16px; box-shadow:var(--shadow); position:sticky; top:88px; align-self:start;
+    }
+    .nav h4{margin:8px 10px 12px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.12em}
+    .nav a{
+      display:flex; align-items:center; gap:12px; padding:10px 12px; margin:4px 0;
+      color:var(--subtext); text-decoration:none; border-radius:12px; border:1px solid transparent;
+    }
+    .nav a:hover{background:var(--panel-2); border-color:rgba(255,255,255,.07)}
+    .nav a.active{background:linear-gradient(135deg, rgba(124,92,255,.15), rgba(124,92,255,.05)); color:var(--text); border-color:rgba(124,92,255,.35)}
+    .help{
+      margin-top:16px; padding:12px; font-size:12px; color:var(--muted);
+      border-top:1px dashed rgba(255,255,255,.08);
+    }
+
+    /* Main content */
+    .content{display:grid; gap:18px}
+
+    .grid{
+      display:grid; gap:18px;
+      grid-template-columns: repeat(12, 1fr);
+    }
+
+    /* Cards */
+    .card{
+      background:var(--panel); border:1px solid rgba(255,255,255,.06); border-radius:var(--radius);
+      box-shadow:var(--shadow); padding:16px;
+    }
+    .card h3{margin:0 0 8px; font-size:16px}
+    .meta{font-size:12px; color:var(--muted); margin-bottom:8px}
+
+    /* Status Row */
+    .status{
+      display:grid; gap:18px;
+      grid-template-columns: repeat(12, 1fr);
+    }
+    .stat{grid-column: span 3; display:grid; gap:8px; padding:16px; background:var(--panel-2);
+      border:1px solid rgba(255,255,255,.06); border-radius:14px}
+    @media (max-width: 1100px){ .stat{grid-column: span 6} }
+    @media (max-width: 640px){ .stat{grid-column: span 12} }
+
+    .kpi{display:flex; align-items:center; gap:12px}
+    .kpi .icon{
+      width:36px; height:36px; border-radius:10px; display:grid; place-items:center;
+      background:linear-gradient(135deg, rgba(124,92,255,.15), rgba(124,92,255,.05)); color:var(--brand);
+      border:1px solid rgba(124,92,255,.35);
+    }
+    .kpi .value{font-size:22px; font-weight:700}
+    .tag{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; font-size:12px}
+    .ok{background:rgba(61,220,151,.12); color:var(--ok); border:1px solid rgba(61,220,151,.35)}
+    .warn{background:rgba(245,158,11,.12); color:var(--warn); border:1px solid rgba(245,158,11,.35)}
+    .bad{background:rgba(239,68,68,.12); color:var(--bad); border:1px solid rgba(239,68,68,.35)}
+    .muted{background:rgba(139,147,167,.12); color:var(--muted); border:1px solid rgba(139,147,167,.35)}
+
+    /* Detection strip (timeline-like, no JS) */
+    .strip{
+      display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:6px; margin-top:10px;
+    }
+    .pulse{
+      height:22px; border-radius:6px; background:linear-gradient(180deg, rgba(124,92,255,.35), rgba(124,92,255,.15));
+      border:1px solid rgba(124,92,255,.45);
+      position:relative; overflow:hidden;
+    }
+    .pulse::after{
+      content:""; position:absolute; inset:0;
+      background:repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 2px, transparent 2px 6px);
+      opacity:.6;
+    }
+    .pulse.hot{background:linear-gradient(180deg, rgba(239,68,68,.5), rgba(239,68,68,.18)); border-color:rgba(239,68,68,.55)}
+    .pulse.warm{background:linear-gradient(180deg, rgba(245,158,11,.5), rgba(245,158,11,.18)); border-color:rgba(245,158,11,.55)}
+    .legend{display:flex; gap:10px; align-items:center; font-size:12px; color:var(--muted)}
+    .box{width:12px; height:12px; border-radius:4px; display:inline-block; border:1px solid rgba(255,255,255,.35)}
+    .b-hot{background:rgba(239,68,68,.5); border-color:rgba(239,68,68,.65)}
+    .b-warm{background:rgba(245,158,11,.5); border-color:rgba(245,158,11,.65)}
+    .b-cold{background:rgba(124,92,255,.35); border-color:rgba(124,92,255,.65)}
+
+    /* Room map placeholder */
+    .grid-map{
+      display:grid; grid-template-columns:repeat(6, 1fr); gap:10px; margin-top:8px;
+    }
+    .cell{
+      aspect-ratio:1/1; border-radius:12px; background:var(--panel-2); border:1px dashed rgba(255,255,255,.10);
+      display:grid; place-items:center; font-size:12px; color:var(--muted);
+    }
+    .cell.detect{background:linear-gradient(135deg, rgba(239,68,68,.14), rgba(239,68,68,.06)); color:var(--bad);
+      border:1px solid rgba(239,68,68,.45); font-weight:600}
+
+    /* Forms */
+    .form{
+      display:grid; gap:12px; margin-top:6px;
+      grid-template-columns: repeat(12, 1fr);
+    }
+    .field{grid-column: span 6; display:grid; gap:6px}
+    .field.full{grid-column: span 12}
+    .field label{font-size:12px; color:var(--muted)}
+    .input, .select, .textarea{
+      width:100%; padding:12px 12px; border-radius:12px; color:var(--text);
+      background:var(--panel-2); border:1px solid rgba(255,255,255,.08);
+      outline:none;
+    }
+    .input:focus, .select:focus, .textarea:focus{ box-shadow: var(--ring); border-color: rgba(124,92,255,.55) }
+    .btn{
+      appearance:none; border:none; padding:10px 14px; border-radius:12px; font-weight:600;
+      background:linear-gradient(135deg, var(--brand), #c084fc); color:white; cursor:pointer;
+      box-shadow:0 10px 20px rgba(124,92,255,.35);
+    }
+    .btn.ghost{
+      background:transparent; color:var(--text); border:1px solid rgba(255,255,255,.12); box-shadow:none;
+    }
+
+    /* Table */
+    .table{
+      width:100%; border-collapse:collapse; overflow:hidden; border-radius:14px; border:1px solid rgba(255,255,255,.08);
+    }
+    .table th, .table td{ padding:12px 14px; text-align:left }
+    .table thead th{ font-size:12px; color:var(--muted); background:var(--panel-2) }
+    .table tbody tr:nth-child(odd){ background:rgba(255,255,255,.02) }
+    .badge{ padding:6px 10px; border-radius:999px; font-size:12px; display:inline-block }
+    .badge.ok{ background:rgba(61,220,151,.12); color:var(--ok); border:1px solid rgba(61,220,151,.35)}
+    .badge.hit{ background:rgba(239,68,68,.12); color:var(--bad); border:1px solid rgba(239,68,68,.35)}
+    .badge.warn{ background:rgba(245,158,11,.12); color:var(--warn); border:1px solid rgba(245,158,11,.35)}
+
+    /* Footer */
+    footer{
+      text-align:center; color:var(--muted); font-size:12px; padding:18px 0 28px;
+    }
+
+    /* Headings group */
+    .heading{
+      display:flex; align-items:end; justify-content:space-between; gap:12px; margin-bottom:-6px;
+    }
+    .heading .title{margin:0}
+    .heading .actions{display:flex; gap:10px; align-items:center}
+    .hint{font-size:12px; color:var(--muted)}
+  </style>
+</head>
+
+<body>
+  <!-- CSS-only theme toggle checkbox -->
+  <input id="theme-toggle" type="checkbox" aria-label="Toggle light mode">
+
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="logo"><i class="fa-solid fa-wifi"></i></div>
+          <div>
+            Wi-Fi Through-Wall Human Detection
+            <div class="hint">Raspberry&nbsp;Pi • CSI/CSI-Lite / RSSI • Passive Radar UI</div>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <div class="pill"><i class="fa-solid fa-circle"></i> Service: <strong>&nbsp;Running</strong></div>
+        <label for="theme-toggle" class="toggle" title="Toggle light / dark">
+          <i class="fa-solid fa-moon"></i>
+          <div class="knob"><span class="dot"></span></div>
+          <i class="fa-solid fa-sun"></i>
+        </label>
+      </div>
+    </header>
+
+    <main class="shell">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <nav class="nav">
+          <h4>Navigation</h4>
+          <a href="#" class="active"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+          <a href="#events"><i class="fa-solid fa-wave-square"></i> Events</a>
+          <a href="#config"><i class="fa-solid fa-sliders"></i> Configuration</a>
+          <a href="home.html"><i class="fa-solid fa-wifi"></i> Network</a>
+          <a href="#about"><i class="fa-regular fa-circle-question"></i> About</a>
+        </nav>
+        <div class="help">
+          Tip: This UI is HTML/CSS only. Post your data to the Pi and render values server-side, or inject via your backend.
+        </div>
+      </aside>
+
+      <!-- Main -->
+      <section class="content">
+
+        <!-- STATUS CARDS -->
+        <div class="status">
+          <div class="stat">
+            <div class="kpi">
+              <div class="icon"><i class="fa-solid fa-person-walking"></i></div>
+              <div>
+                <div class="value">Human Detected</div>
+                <div class="meta">Through-wall inference</div>
+              </div>
+            </div>
+            <span class="tag bad"><i class="fa-solid fa-bell"></i> ALERT</span>
+            <div class="strip" aria-label="Detection intensity timeline (last minute)">
+              <div class="pulse"></div><div class="pulse warm"></div><div class="pulse hot"></div>
+              <div class="pulse"></div><div class="pulse warm"></div><div class="pulse"></div>
+              <div class="pulse hot"></div><div class="pulse"></div><div class="pulse"></div><div class="pulse warm"></div>
+            </div>
+            <div class="legend" style="margin-top:8px">
+              <span class="box b-hot"></span> High &nbsp; <span class="box b-warm"></span> Medium &nbsp; <span class="box b-cold"></span> Low
+            </div>
+          </div>
+
+          <div class="stat">
+            <div class="kpi">
+              <div class="icon"><i class="fa-solid fa-signal"></i></div>
+              <div>
+                <div class="value">-52 dBm</div>
+                <div class="meta">RSSI (Avg)</div>
+              </div>
+            </div>
+            <span class="tag ok"><i class="fa-regular fa-circle-check"></i> Link Good</span>
+            <div class="meta">AP: Pi-CSI-AP • Ch 6 • 20 MHz</div>
+          </div>
+
+          <div class="stat">
+            <div class="kpi">
+              <div class="icon"><i class="fa-regular fa-clock"></i></div>
+              <div>
+                <div class="value">08:12:27</div>
+                <div class="meta">Last Event (IST)</div>
+              </div>
+            </div>
+            <span class="tag warn"><i class="fa-regular fa-bell"></i> 2 min ago</span>
+            <div class="meta">Confidence: 0.87</div>
+          </div>
+
+          <div class="stat">
+            <div class="kpi">
+              <div class="icon"><i class="fa-solid fa-microchip"></i></div>
+              <div>
+                <div class="value">37 °C</div>
+                <div class="meta">Raspberry Pi Temp</div>
+              </div>
+            </div>
+            <span class="tag muted"><i class="fa-solid fa-fan"></i> Nominal</span>
+            <div class="meta">CPU: 22% • RAM: 41%</div>
+          </div>
+        </div>
+
+        <!-- ROOM MAP + QUICK ACTIONS -->
+        <div class="grid">
+          <div class="card" style="grid-column: span 8">
+            <div class="heading">
+              <h3 class="title">Room Heatmap (Placeholder)</h3>
+              <div class="actions">
+                <button class="btn ghost"><i class="fa-regular fa-image"></i> Upload Floorplan</button>
+                <button class="btn"><i class="fa-regular fa-floppy-disk"></i> Save Snapshot</button>
+              </div>
+            </div>
+            <div class="meta">Mark cells where detection confidence is highest (server should set classes)</div>
+            <div class="grid-map">
+              <div class="cell">A1</div>
+              <div class="cell detect">A2</div>
+              <div class="cell">A3</div>
+              <div class="cell">A4</div>
+              <div class="cell">A5</div>
+              <div class="cell">A6</div>
+
+              <div class="cell">B1</div>
+              <div class="cell">B2</div>
+              <div class="cell detect">B3</div>
+              <div class="cell">B4</div>
+              <div class="cell">B5</div>
+              <div class="cell">B6</div>
+
+              <div class="cell">C1</div>
+              <div class="cell">C2</div>
+              <div class="cell">C3</div>
+              <div class="cell">C4</div>
+              <div class="cell detect">C5</div>
+              <div class="cell">C6</div>
+
+              <div class="cell">D1</div>
+              <div class="cell">D2</div>
+              <div class="cell">D3</div>
+              <div class="cell">D4</div>
+              <div class="cell">D5</div>
+              <div class="cell">D6</div>
+            </div>
+          </div>
+
+          <div class="card" style="grid-column: span 4">
+            <h3>Quick Actions</h3>
+            <div class="meta">Common operations</div>
+            <div style="display:grid; gap:10px; margin-top:8px">
+              <button class="btn"><i class="fa-solid fa-record-vinyl"></i> Start Capture</button>
+              <button class="btn ghost"><i class="fa-solid fa-stop"></i> Stop Capture</button>
+              <button class="btn ghost"><i class="fa-solid fa-rotate"></i> Recalibrate Background</button>
+              <button class="btn ghost"><i class="fa-solid fa-file-arrow-down"></i> Export Logs (CSV)</button>
+            </div>
+            <div class="hint" style="margin-top:10px">
+              Hook these buttons to your Pi endpoints (e.g., <code>/api/start</code>, <code>/api/stop</code>) in your backend.
+            </div>
+          </div>
+        </div>
+
+        <!-- EVENTS TABLE -->
+        <div class="card" id="events">
+          <div class="heading">
+            <h3 class="title">Event Log</h3>
+            <div class="actions">
+              <span class="pill"><i class="fa-regular fa-calendar"></i> Today</span>
+              <button class="btn ghost"><i class="fa-solid fa-filter"></i> Filter</button>
+            </div>
+          </div>
+          <table class="table" role="table" aria-label="Detection events">
+            <thead>
+              <tr>
+                <th>Time (IST)</th>
+                <th>Confidence</th>
+                <th>RSSI</th>
+                <th>Channel</th>
+                <th>Cell</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>08:12:27</td>
+                <td>0.87</td>
+                <td>-53 dBm</td>
+                <td>6 / 20 MHz</td>
+                <td>B3</td>
+                <td><span class="badge hit">HUMAN</span></td>
+              </tr>
+              <tr>
+                <td>08:10:11</td>
+                <td>0.61</td>
+                <td>-55 dBm</td>
+                <td>6 / 20 MHz</td>
+                <td>A2</td>
+                <td><span class="badge warn">MOTION</span></td>
+              </tr>
+              <tr>
+                <td>08:08:02</td>
+                <td>0.12</td>
+                <td>-51 dBm</td>
+                <td>6 / 20 MHz</td>
+                <td>C5</td>
+                <td><span class="badge ok">CLEAR</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- CONFIGURATION -->
+        <div class="grid" id="config">
+          <div class="card" style="grid-column: span 6">
+            <h3>Detection Configuration</h3>
+            <div class="meta">Model & thresholds</div>
+            <form class="form" action="#" method="post">
+              <div class="field">
+                <label for="model">Model</label>
+                <select id="model" class="select" name="model">
+                  <option>CSI-Net v2 (Default)</option>
+                  <option>RSSI-SVM (Light)</option>
+                  <option>Passive-Radar-CFAR</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="threshold">Detection Threshold</label>
+                <input id="threshold" class="input" type="number" min="0" max="1" step="0.01" value="0.65" name="threshold">
+              </div>
+              <div class="field">
+                <label for="smooth">Smoothing Window (frames)</label>
+                <input id="smooth" class="input" type="number" min="1" value="7" name="smooth">
+              </div>
+              <div class="field">
+                <label for="cooldown">Alert Cooldown (s)</label>
+                <input id="cooldown" class="input" type="number" min="0" value="30" name="cooldown">
+              </div>
+              <div class="field full">
+                <label for="notes">Notes</label>
+                <textarea id="notes" class="textarea" rows="3" placeholder="Describe environment, wall type, AP distance..."></textarea>
+              </div>
+              <div class="field full" style="display:flex; gap:10px">
+                <button class="btn" type="submit"><i class="fa-regular fa-floppy-disk"></i> Save</button>
+                <button class="btn ghost" type="reset"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card" style="grid-column: span 6" id="network">
+            <h3>Wi-Fi / Device</h3>
+            <div class="meta">AP & interface</div>
+            <form class="form" action="#" method="post">
+              <div class="field">
+                <label for="iface">Interface</label>
+                <select id="iface" class="select" name="iface">
+                  <option>wlan0 (CSI-capable)</option>
+                  <option>wlan1 (Monitor)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="channel">Channel</label>
+                <input id="channel" class="input" type="number" min="1" max="165" value="6" name="channel">
+              </div>
+              <div class="field">
+                <label for="bw">Bandwidth</label>
+                <select id="bw" class="select" name="bandwidth">
+                  <option>20 MHz</option>
+                  <option>40 MHz</option>
+                  <option>80 MHz</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="bssid">BSSID</label>
+                <input id="bssid" class="input" type="text" placeholder="AA:BB:CC:DD:EE:FF" name="bssid">
+              </div>
+              <div class="field full">
+                <label for="static-ip">Static IP (optional)</label>
+                <input id="static-ip" class="input" type="text" placeholder="192.168.1.50" name="ip">
+              </div>
+              <div class="field full" style="display:flex; gap:10px">
+                <button class="btn" type="submit"><i class="fa-solid fa-floppy-disk"></i> Apply</button>
+                <button class="btn ghost" type="button"><i class="fa-solid fa-arrows-rotate"></i> Restart Wi-Fi</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ABOUT -->
+        <div class="card" id="about">
+          <h3>About</h3>
+          <p class="meta">
+            This interface is a front-end template for a Raspberry Pi system that estimates human presence through walls
+            using Wi-Fi channel state information (CSI), RSSI variance, or passive radar-style reflections. Replace the
+            placeholder values server-side and wire the buttons to your REST endpoints.
+          </p>
+          <ul class="hint">
+            <li>Update KPIs (Detected / RSSI / Last Event / Temp) with live values from your backend.</li>
+            <li>To highlight heatmap cells, add/remove the class <code>detect</code> on <code>.cell</code> elements.</li>
+            <li>To color the timeline bars, use classes: <code>.pulse</code>, <code>.pulse.warm</code>, <code>.pulse.hot</code>.</li>
+          </ul>
+        </div>
+
+        <footer>
+          © 2025 Wi-Fi Through-Wall Detection • Raspberry Pi UI (HTML + CSS only)
+        </footer>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
